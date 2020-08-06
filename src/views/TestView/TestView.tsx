@@ -2,23 +2,34 @@ import React, { useEffect, useState } from "react";
 import { forkJoin, Observable, Subject } from "rxjs";
 import { take, takeUntil, tap } from "rxjs/operators";
 import { repository } from "./TestRepository";
+import Spin from "antd/lib/spin";
 
 export default function TestView() {
-  const { list, total } = useMaster(
+  const { list, total, loading } = useMaster(
     repository.getUser(),
     repository.getTotalUser(),
   );
 
   return (
     <>
-      <h1>
-        total: <span>{total}</span>
-      </h1>
-      <ul>
-        {list &&
-          list.length > 0 &&
-          list.map((user: any) => <li key={user.id}>{user.displayName}</li>)}
-      </ul>
+      {loading ? (
+        <div style={{ width: "100%", height: "100%", background: "#f0f0f0" }}>
+          <Spin spinning={loading} tip={"loading"} />
+        </div>
+      ) : (
+        <>
+          <h1>
+            total: <span>{total}</span>
+          </h1>
+          <ul>
+            {list &&
+              list.length > 0 &&
+              list.map((user: any) => (
+                <li key={user.id}>{user.displayName}</li>
+              ))}
+          </ul>
+        </>
+      )}
     </>
   );
 }
@@ -29,12 +40,21 @@ function useMaster<T>(getList: Observable<T[]>, getTotal: Observable<number>) {
   const [loadList, setLoadList] = useState<boolean>(true);
   const [loading, setLoading] = useState<boolean>(false);
   const { isCancelled, cancelSubcription } = subcriptionCancellation();
+  const [filter, setFilter] = useState<any>({});
 
+  // six times re-renders by using loadList
   useEffect(() => {
     if (loadList) {
       forkJoin([getList, getTotal])
         .pipe(
-          tap(() => setLoading(true)),
+          tap(() => {
+            // console.log(`result 1: `, result);
+            setLoading(true);
+          }),
+          tap(() => {
+            // console.log(`result 2: `, result);
+            setFilter({ skip: 0, take: 10 });
+          }),
           takeUntil(isCancelled),
           take(1),
         )
@@ -50,7 +70,7 @@ function useMaster<T>(getList: Observable<T[]>, getTotal: Observable<number>) {
     };
   }, [cancelSubcription, getList, getTotal, isCancelled, loadList]);
 
-  return { list, total, loading };
+  return { list, total, loading, filter };
 }
 
 // function useFetch<T>(): {
