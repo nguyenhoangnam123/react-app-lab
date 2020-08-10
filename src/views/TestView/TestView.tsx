@@ -1,11 +1,16 @@
-import React, { useEffect, useState } from "react";
+import { Spin } from "antd";
+import React, { useEffect, useReducer, Reducer, useCallback } from "react";
 import { forkJoin, Observable, Subject } from "rxjs";
-import { take, takeUntil, tap } from "rxjs/operators";
+import { finalize, take, takeUntil, tap } from "rxjs/operators";
 import { repository } from "./TestRepository";
-import Spin from "antd/lib/spin";
+import { LoadingOutlined } from "@ant-design/icons";
+
+const antIcon = (
+  <LoadingOutlined style={{ fontSize: 24, color: "blue" }} spin />
+);
 
 export default function TestView() {
-  const { list, total, loading } = useMaster(
+  const { list, total, loading } = useMasterReducer(
     repository.getUser(),
     repository.getTotalUser(),
   );
@@ -13,8 +18,21 @@ export default function TestView() {
   return (
     <>
       {loading ? (
-        <div style={{ width: "100%", height: "100%", background: "#f0f0f0" }}>
-          <Spin spinning={loading} tip={"loading"} />
+        <div
+          style={{
+            display: "flex",
+            width: "100vw",
+            height: "100vh",
+            alignContent: "center",
+            justifyItems: "center",
+          }}
+        >
+          <Spin
+            spinning={loading}
+            style={{ margin: "auto" }}
+            size={"large"}
+            indicator={antIcon}
+          />
         </div>
       ) : (
         <>
@@ -34,70 +52,137 @@ export default function TestView() {
   );
 }
 
-function useMaster<T>(getList: Observable<T[]>, getTotal: Observable<number>) {
-  const [list, setList] = useState<T[]>([]);
-  const [total, setTotal] = useState<number>(0);
-  const [loadList, setLoadList] = useState<boolean>(true);
-  const [loading, setLoading] = useState<boolean>(false);
-  const { isCancelled, cancelSubcription } = subcriptionCancellation();
-  const [filter, setFilter] = useState<any>({});
+export const LOAD_LIST: string = "LOAD_LIST";
+export const LOADING: string = "LOADING";
+export const FINISH_LOADLIST: string = "FINISH_LOADLIST";
 
-  // six times re-renders by using loadList
-  useEffect(() => {
-    if (loadList) {
-      forkJoin([getList, getTotal])
-        .pipe(
-          tap(() => {
-            // console.log(`result 1: `, result);
-            setLoading(true);
-          }),
-          tap(() => {
-            // console.log(`result 2: `, result);
-            setFilter({ skip: 0, take: 10 });
-          }),
-          takeUntil(isCancelled),
-          take(1),
-        )
-        .subscribe((results: [T[], number]) => {
-          setLoadList(false);
-          setLoading(false);
-          setList([...results[0]]);
-          setTotal(results[1]);
+export interface MasterState<T> {
+  list?: T[];
+  total?: number;
+  loading?: boolean;
+  isLoadList?: boolean;
+}
+
+export interface MasterAction<T> {
+  type?: string;
+  nextAction?: string;
+  state?: MasterState<T>;
+}
+
+function masterReducer<T>(state: MasterState<T>, action: any): MasterState<T> {
+  switch (action.type) {
+    case LOAD_LIST: {
+      const { list, total } = action.state;
+      return {
+        ...state,
+        list: list,
+        total: total,
+      };
+    }
+    case LOADING: {
+      return {
+        ...state,
+        loading: true,
+        isLoadList: false,
+      };
+    }
+    case FINISH_LOADLIST: {
+      return {
+        ...state,
+        loading: false,
+        isLoadList: false,
+      };
+    }
+  }
+}
+
+function useMasterReducer<T>(
+  getList: Observable<T[]>,
+  getTotal: Observable<number>,
+) {
+  const { isCancelled, cancelSubcription } = subcriptionCancellation();
+  const [{ list, total, loading, isLoadList }, dispatch] = useReducer<
+    Reducer<MasterState<T>, MasterAction<T>>
+  >(masterReducer, {
+    list: [],
+    total: 0,
+    loading: false,
+    isLoadList: true,
+  });
+
+  const handleLoadList = useCallback(() => {
+    forkJoin([getList, getTotal])
+      .pipe(
+        tap(() => {
+          dispatch({ type: "LOADING" });
+        }),
+        takeUntil(isCancelled),
+        take(1),
+        finalize(() => {
+          dispatch({
+            type: "FINISH_LOADLIST",
+          });
+        }),
+      )
+      .subscribe((results: [T[], number]) => {
+        dispatch({
+          type: "LOAD_LIST",
+          state: {
+            list: results[0],
+            total: results[1],
+          },
         });
+      });
+  }, [getList, getTotal, isCancelled]);
+
+  useEffect(() => {
+    if (isLoadList) {
+      handleLoadList();
     }
     return () => {
       cancelSubcription();
     };
-  }, [cancelSubcription, getList, getTotal, isCancelled, loadList]);
+  }, [cancelSubcription, handleLoadList, isLoadList]);
 
-  return { list, total, loading, filter };
+  return { list, total, loading };
 }
 
-// function useFetch<T>(): {
-//   users: T[];
-// } {
-//   const [users, setUsers] = useState<T[]>([]);
+// function useMaster<T>(getList: Observable<T[]>, getTotal: Observable<number>) {
+//   const [list, setList] = useState<T[]>([]);
+//   const [total, setTotal] = useState<number>(0);
+//   const [loadList, setLoadList] = useState<boolean>(true);
+//   const [loading, setLoading] = useState<boolean>(false);
 //   const { isCancelled, cancelSubcription } = subcriptionCancellation();
 
 //   useEffect(() => {
-//     // subcribe it, create subject to init notification when get success,
-//     repository
-//       .getUser()
-//       .pipe(
-//         takeUntil(isCancelled), // complete when isCancelled emit a value
-//         take(1), // emit only the first count value from source
-//       )
-//       .subscribe((data: T[]) => {
-//         setUsers(data);
-//       });
+//     if (loadList) {
+//       setLoading(true);
+//       forkJoin([getList, getTotal])
+//         .pipe(
+//           takeUntil(isCancelled),
+//           take(1),
+//           finalize(() => {
+//             setLoading(false);
+//           }),
+//         )
+//         .subscribe((results: [T[], number]) => {
+//           setLoadList(false);
+//           setLoading(false);
+//           setList([...results[0]]);
+//           setTotal(results[1]);
+//         });
+//     }
+
 //     return () => {
 //       cancelSubcription();
 //     };
-//   }, [cancelSubcription, isCancelled]);
+//   }, [cancelSubcription, getList, getTotal, isCancelled, loadList]);
 
-//   return {
-//     users,
-//   };
+//   useEffect(() => {
+//     console.log(`loading: `, loading);
+//   }, [loading]);
+
+//   return { list, total, loading };
 // }
 
 /* expose stop subject as Observable and next method to init stop */
