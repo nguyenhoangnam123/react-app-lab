@@ -1,4 +1,6 @@
-import { JSONObject } from "react3l";
+export interface JSONObject {
+  [key: string]: string | number | boolean | null | undefined | JSONObject;
+}
 
 export function sort(json: JSONObject) {
   const result: JSONObject = {};

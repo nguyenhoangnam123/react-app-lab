@@ -1,18 +1,50 @@
-import { Spin } from "antd";
-import React, { useEffect, useReducer, Reducer, useCallback } from "react";
-import { forkJoin, Observable, Subject } from "rxjs";
-import { finalize, take, takeUntil, tap } from "rxjs/operators";
-import { repository } from "./TestRepository";
 import { LoadingOutlined } from "@ant-design/icons";
+import { Spin } from "antd";
+import listService from "core/services/ListService";
+import React, { useCallback } from "react";
+import { repository } from "./TestRepository";
 
 const antIcon = (
   <LoadingOutlined style={{ fontSize: 24, color: "blue" }} spin />
 );
 
 export default function TestView() {
-  const { list, total, loading } = useMasterReducer(
-    repository.getUser(),
-    repository.getTotalUser(),
+  // const { list, total, loading } = useMasterReducer(
+  //   repository.getUser(),
+  //   repository.getTotalUser(),
+  // );
+
+  const {
+    list,
+    total,
+    loadingList: loading,
+    handleDelete,
+    handleBulkDelete,
+  } = listService.useList(
+    { skip: 0, take: 10 },
+    undefined,
+    repository.getUser,
+    repository.getTotalUser,
+    repository.deleteUser,
+    repository.bulkDeleteUser,
+  );
+
+  const handleDeleteOne = useCallback(
+    (id: number) => {
+      return () => {
+        handleDelete({ id });
+      };
+    },
+    [handleDelete],
+  );
+
+  const handleDeleteMany = useCallback(
+    (ids: number[]) => {
+      return () => {
+        handleBulkDelete(ids);
+      };
+    },
+    [handleBulkDelete],
   );
 
   return (
@@ -46,6 +78,10 @@ export default function TestView() {
                 <li key={user.id}>{user.displayName}</li>
               ))}
           </ul>
+          <div className='btn-group'>
+            <button onClick={handleDeleteOne(2857)}>Delete One</button>
+            <button onClick={handleDeleteMany([2659])}>Delete Many</button>
+          </div>
         </>
       )}
     </>
@@ -69,83 +105,83 @@ export interface MasterAction<T> {
   state?: MasterState<T>;
 }
 
-function masterReducer<T>(state: MasterState<T>, action: any): MasterState<T> {
-  switch (action.type) {
-    case LOAD_LIST: {
-      const { list, total } = action.state;
-      return {
-        ...state,
-        list: list,
-        total: total,
-      };
-    }
-    case LOADING: {
-      return {
-        ...state,
-        loading: true,
-        isLoadList: false,
-      };
-    }
-    case FINISH_LOADLIST: {
-      return {
-        ...state,
-        loading: false,
-        isLoadList: false,
-      };
-    }
-  }
-}
+// function masterReducer<T>(state: MasterState<T>, action: any): MasterState<T> {
+//   switch (action.type) {
+//     case LOAD_LIST: {
+//       const { list, total } = action.state;
+//       return {
+//         ...state,
+//         list: list,
+//         total: total,
+//       };
+//     }
+//     case LOADING: {
+//       return {
+//         ...state,
+//         loading: true,
+//         isLoadList: false,
+//       };
+//     }
+//     case FINISH_LOADLIST: {
+//       return {
+//         ...state,
+//         loading: false,
+//         isLoadList: false,
+//       };
+//     }
+//   }
+// }
 
-function useMasterReducer<T>(
-  getList: Observable<T[]>,
-  getTotal: Observable<number>,
-) {
-  const { isCancelled, cancelSubcription } = subcriptionCancellation();
-  const [{ list, total, loading, isLoadList }, dispatch] = useReducer<
-    Reducer<MasterState<T>, MasterAction<T>>
-  >(masterReducer, {
-    list: [],
-    total: 0,
-    loading: false,
-    isLoadList: true,
-  });
+// function useMasterReducer<T>(
+//   getList: Observable<T[]>,
+//   getTotal: Observable<number>,
+// ) {
+//   const { isCancelled, cancelSubcription } = subcriptionCancellation();
+//   const [{ list, total, loading, isLoadList }, dispatch] = useReducer<
+//     Reducer<MasterState<T>, MasterAction<T>>
+//   >(masterReducer, {
+//     list: [],
+//     total: 0,
+//     loading: false,
+//     isLoadList: true,
+//   });
 
-  const handleLoadList = useCallback(() => {
-    forkJoin([getList, getTotal])
-      .pipe(
-        tap(() => {
-          dispatch({ type: "LOADING" });
-        }),
-        takeUntil(isCancelled),
-        take(1),
-        finalize(() => {
-          dispatch({
-            type: "FINISH_LOADLIST",
-          });
-        }),
-      )
-      .subscribe((results: [T[], number]) => {
-        dispatch({
-          type: "LOAD_LIST",
-          state: {
-            list: results[0],
-            total: results[1],
-          },
-        });
-      });
-  }, [getList, getTotal, isCancelled]);
+//   const handleLoadList = useCallback(() => {
+//     forkJoin([getList, getTotal])
+//       .pipe(
+//         tap(() => {
+//           dispatch({ type: "LOADING" });
+//         }),
+//         takeUntil(isCancelled),
+//         take(1),
+//         finalize(() => {
+//           dispatch({
+//             type: "FINISH_LOADLIST",
+//           });
+//         }),
+//       )
+//       .subscribe((results: [T[], number]) => {
+//         dispatch({
+//           type: "LOAD_LIST",
+//           state: {
+//             list: results[0],
+//             total: results[1],
+//           },
+//         });
+//       });
+//   }, [getList, getTotal, isCancelled]);
 
-  useEffect(() => {
-    if (isLoadList) {
-      handleLoadList();
-    }
-    return () => {
-      cancelSubcription();
-    };
-  }, [cancelSubcription, handleLoadList, isLoadList]);
+//   useEffect(() => {
+//     if (isLoadList) {
+//       handleLoadList();
+//     }
+//     return () => {
+//       cancelSubcription();
+//     };
+//   }, [cancelSubcription, handleLoadList, isLoadList]);
 
-  return { list, total, loading };
-}
+//   return { list, total, loading };
+// }
 
 // function useMaster<T>(getList: Observable<T[]>, getTotal: Observable<number>) {
 //   const [list, setList] = useState<T[]>([]);
@@ -187,18 +223,18 @@ function useMasterReducer<T>(
 
 /* expose stop subject as Observable and next method to init stop */
 
-function subcriptionCancellation(): {
-  isCancelled: Observable<void>;
-  cancelSubcription: () => void;
-} {
-  // define subject to cancel all subscriptions
-  const stop$ = new Subject<void>();
-  const cancelSubcription = (): void => {
-    stop$.next();
-    stop$.complete();
-  };
-  return {
-    isCancelled: stop$.asObservable(),
-    cancelSubcription,
-  };
-}
+// function subcriptionCancellation(): {
+//   isCancelled: Observable<void>;
+//   cancelSubcription: () => void;
+// } {
+//   // define subject to cancel all subscriptions
+//   const stop$ = new Subject<void>();
+//   const cancelSubcription = (): void => {
+//     stop$.next();
+//     stop$.complete();
+//   };
+//   return {
+//     isCancelled: stop$.asObservable(),
+//     cancelSubcription,
+//   };
+// }
