@@ -256,10 +256,7 @@ class ListService {
    * */
   useLocalList<T extends Model, TFilter extends ModelFilter>(
     modelFilter: TFilter,
-    setModelFilter: Dispatch<SetStateAction<TFilter>>, // update modelFilter for business
     source: T[], // source item always content key
-    setSource: (list: T[]) => void, // update Source
-    selectedKeys?: string[],
   ) {
     //  auto complete subscription until isCancelled == true (unMounted component)
     const { isCancelled, cancelSubcription } = subcriptionCancellation();
@@ -289,27 +286,6 @@ class ListService {
       },
       [modelFilter, sortData],
     );
-
-    // delete local by key
-    const handleDelete = useCallback(
-      (key: number | string) => {
-        if (source?.length > 0) {
-          setSource(source.filter((item) => item.key !== key)); // remove one item in source by key and update source
-          setModelFilter({ ...modelFilter, skip: 0, take: DEFAULT_TAKE });
-        }
-      },
-      [source, setSource, setModelFilter, modelFilter],
-    );
-
-    // delete local by key
-    const handleBulkDelete = useCallback(() => {
-      if (source?.length > 0) {
-        setSource(
-          source.filter((item) => !selectedKeys.includes(item.key as string)),
-        ); // remove many items in source by key and update source
-        setModelFilter({ ...modelFilter, skip: 0, take: DEFAULT_TAKE });
-      }
-    }, [source, setSource, setModelFilter, modelFilter, selectedKeys]);
 
     useEffect(() => {
       of(source)
@@ -345,7 +321,7 @@ class ListService {
       source,
     ]);
 
-    return { list, total, loadingList, handleDelete, handleBulkDelete };
+    return { list, total, loadingList };
   }
 }
 
