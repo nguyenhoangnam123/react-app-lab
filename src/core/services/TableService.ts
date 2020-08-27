@@ -3,12 +3,8 @@ import { PaginationProps } from "antd/lib/pagination";
 import { RowSelectionType, SortOrder } from "antd/lib/table/interface";
 import { DEFAULT_TAKE } from "core/config/consts";
 import Model from "core/models/Model";
-import {
-  ActionFilterEnum,
-  AdvanceFilterAction,
-} from "core/services/advance-filter-service";
 import listService from "core/services/ListService";
-import { Dispatch, useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ModelFilter } from "react3l/core";
 import { Observable } from "rxjs";
 
@@ -18,7 +14,7 @@ export class TableService {
    *
    * return selectedRowKeys from table select
    * @param: selectionType: RowSelectionType (default is checkbox)
-   * @return: { handleFetchInit,handleFetchEnd }
+   * @return: { rowSelection,selectedRowKeys, setSelectedRowKeys }
    *
    * */
   useRowSelection(
@@ -48,7 +44,7 @@ export class TableService {
    *
    * return pagination
    * @param: selectionType: RowSelectionType (default is checkbox)
-   * @return: { handleFetchInit,handleFetchEnd }
+   * @return: pagination: PaginationProps
    *
    * */
   usePagination<TFilter extends ModelFilter>(
@@ -63,6 +59,44 @@ export class TableService {
       }),
       [filter.skip, filter.take, total],
     );
+  }
+  /**
+   *
+   * return handleTableChange
+   * @param: filter: RowSelectionType (default is checkbox)
+   * @return: handleChange(newPagination: TablePaginationConfig,filters: Record<string, Key[] | null>,sorter: SorterResult<T>,) => void
+   *
+   * */
+  useTableChange<TFilter extends ModelFilter>(
+    filter: TFilter,
+    setFilter: (filter: TFilter) => void,
+    pagination: PaginationProps,
+  ) {
+    return useCallback((...[newPagination, , sorter]) => {
+      // check pagination change or not
+      if (
+        pagination.current !== newPagination.current ||
+        pagination.pageSize !== newPagination.pageSize
+      ) {
+        const skip: number = Math.ceil(
+          ((newPagination?.current ?? 0) - 1) *
+            (newPagination?.pageSize ?? DEFAULT_TAKE),
+        );
+        const take: number = newPagination.pageSize;
+        setFilter({ ...filter, skip, take });
+      }
+      // check sortOrder and sortDirection
+      if (
+        sorter.field !== filter.orderBy ||
+        sorter.order !== this.getAntOrderType(filter, sorter.field)
+      ) {
+        setFilter({
+          ...filter,
+          orderBy: sorter.field,
+          orderType: this.getOrderType(sorter.order),
+        });
+      }
+    }, []);
   }
   /**
    *
@@ -118,33 +152,10 @@ export class TableService {
     );
 
     // handleChange page or sorter
-    const handleChange = useCallback(
-      (...[newPagination, , sorter]) => {
-        // check pagination change or not
-        if (
-          pagination.current !== newPagination.current ||
-          pagination.pageSize !== newPagination.pageSize
-        ) {
-          const skip: number = Math.ceil(
-            ((newPagination?.current ?? 0) - 1) *
-              (newPagination?.pageSize ?? DEFAULT_TAKE),
-          );
-          const take: number = newPagination.pageSize;
-          setFilter({ ...filter, skip, take });
-        }
-        // check sortOrder and sortDirection
-        if (
-          sorter.field !== filter.orderBy ||
-          sorter.order !== this.getAntOrderType(filter, sorter.field)
-        ) {
-          setFilter({
-            ...filter,
-            orderBy: sorter.field,
-            orderType: this.getOrderType(sorter.order),
-          });
-        }
-      },
-      [filter, setFilter, pagination],
+    const handleChange = this.useTableChange<TFilter>(
+      filter,
+      setFilter,
+      pagination,
     );
 
     return {
@@ -169,7 +180,8 @@ export class TableService {
    * */
   useLocalTable<T extends Model, TFilter extends ModelFilter>(
     filter: TFilter,
-    dispatchFilter: Dispatch<AdvanceFilterAction<TFilter, TFilter>>, // from TFilter to TFilter
+    // dispatchFilter: Dispatch<AdvanceFilterAction<TFilter, TFilter>>, // from TFilter to TFilter
+    setFilter: (filter: TFilter) => void,
     source: T[],
     setSource: (source: T[]) => void,
   ) {
@@ -192,34 +204,11 @@ export class TableService {
       total,
     );
 
-    // handleTableChange page or sort, actually update filter -> new Filter
-    const handleChange = useCallback(
-      (...[newPagination, , sorter]) => {
-        // check pagination change or not
-        if (
-          pagination.current !== newPagination.current ||
-          pagination.pageSize !== newPagination.pageSize
-        ) {
-          const skip: number = Math.ceil(
-            ((newPagination?.current ?? 0) - 1) *
-              (newPagination?.pageSize ?? DEFAULT_TAKE),
-          );
-          const take: number = newPagination.pageSize;
-          dispatchFilter({ type: ActionFilterEnum.ChangeSkipTake, skip, take });
-        }
-        // check sortOrder and sortDirection
-        if (
-          sorter.field !== filter.orderBy ||
-          sorter.order !== this.getAntOrderType(filter, sorter.field)
-        ) {
-          dispatchFilter({
-            type: ActionFilterEnum.ChangeOrderType,
-            orderBy: sorter.field,
-            orderType: this.getOrderType(sorter.order),
-          });
-        }
-      },
-      [dispatchFilter, filter, pagination],
+    // handleChange page or sorter
+    const handleChange = this.useTableChange<TFilter>(
+      filter,
+      setFilter,
+      pagination,
     );
 
     // handleDelete, filter one item by its key and update source
@@ -230,10 +219,11 @@ export class TableService {
           setSelectedRowKeys(
             (selectedRowKeys as string[]).filter((item) => item !== key), // filter selectedRowKeys
           );
-          dispatchFilter({
-            type: ActionFilterEnum.ChangeAllField,
-            data: { ...filter, skip: 0, take: DEFAULT_TAKE },
-          }); // reset to default skip, take
+          //   dispatchFilter({
+          //     type: ActionFilterEnum.ChangeAllField,
+          //     data: { ...filter, skip: 0, take: DEFAULT_TAKE },
+          //   }); // reset to default skip, take
+          setFilter({ ...filter, skip: 0, take: DEFAULT_TAKE });
         }
       },
       [
@@ -241,7 +231,7 @@ export class TableService {
         setSource,
         setSelectedRowKeys,
         selectedRowKeys,
-        dispatchFilter,
+        setFilter,
         filter,
       ],
     );
@@ -260,16 +250,17 @@ export class TableService {
               ),
             ); // remove many items in source by key and update source
             setSelectedRowKeys([]); // empty selectedRowKeys for disabling button
-            dispatchFilter({
-              type: ActionFilterEnum.ChangeAllField,
-              data: { ...filter, skip: 0, take: DEFAULT_TAKE },
-            }); // reset to default skip, take
+            // dispatchFilter({
+            //   type: ActionFilterEnum.ChangeAllField,
+            //   data: { ...filter, skip: 0, take: DEFAULT_TAKE },
+            // }); // reset to default skip, take
+            setFilter({ ...filter, skip: 0, take: DEFAULT_TAKE });
           },
         });
       }
     }, [
       source,
-      dispatchFilter,
+      setFilter,
       filter,
       setSource,
       setSelectedRowKeys,
