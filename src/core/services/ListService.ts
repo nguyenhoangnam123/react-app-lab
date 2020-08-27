@@ -126,7 +126,9 @@ class ListService {
     deleteItem?: (t: T) => Observable<T>,
     bulkDeleteItems?: (t: number[] | string[]) => Observable<void>,
     selectedKeys?: number[] | string[],
+    setSelectedRowKeys?: Dispatch<SetStateAction<number[] | string[]>>,
     onUpdateListSuccess?: (item?: T) => void,
+    isLoadControl?: boolean, // optional control for modal preLoading
   ): {
     list: T[];
     total: number;
@@ -144,6 +146,11 @@ class ListService {
       loadingList: false,
       isLoadList: true,
     });
+
+    const shouldLoad = useMemo(
+      () => (typeof isLoadControl !== "undefined" ? isLoadControl : isLoadList), // decide list is self-controlled or controlled loading
+      [isLoadControl, isLoadList],
+    );
 
     const defaultFilter = this.useListFilter(filter);
 
@@ -188,6 +195,9 @@ class ListService {
               if (typeof onUpdateListSuccess === "function") {
                 onUpdateListSuccess(item); // sideEffect when update list successfully
               }
+              setSelectedRowKeys(
+                (selectedKeys as number[]).filter((id) => id !== item.id), // filter selectedRowKeys
+              );
               setFilter(defaultFilter); // update filter to default skip, take
               handleLoadList(); // reload updated List
             });
@@ -199,6 +209,8 @@ class ListService {
         isCancelled,
         handleFetchEnd,
         onUpdateListSuccess,
+        setSelectedRowKeys,
+        selectedKeys,
         setFilter,
         defaultFilter,
         handleLoadList,
@@ -217,6 +229,7 @@ class ListService {
             if (typeof onUpdateListSuccess === "function") {
               onUpdateListSuccess(); // sideEffect when update list successfully
             }
+            setSelectedRowKeys([]); // empty selectedRowKeys for disabling button
             setFilter(defaultFilter); // update filter to default skip, take
             handleLoadList(); // reload updated List
           });
@@ -231,17 +244,18 @@ class ListService {
       onUpdateListSuccess,
       selectedKeys,
       setFilter,
+      setSelectedRowKeys,
     ]);
 
     useEffect(() => {
-      if (isLoadList) {
+      if (shouldLoad) {
         // trigger loadList only isLoadList == true
         handleLoadList();
       }
       return () => {
         cancelSubcription();
       };
-    }, [cancelSubcription, handleLoadList, isLoadList]);
+    }, [cancelSubcription, handleLoadList, shouldLoad]);
 
     return { list, total, loadingList, handleDelete, handleBulkDelete };
   }
