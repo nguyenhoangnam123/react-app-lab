@@ -4,7 +4,7 @@ import { RowSelectionType, SortOrder } from "antd/lib/table/interface";
 import { DEFAULT_TAKE } from "core/config/consts";
 import Model from "core/models/Model";
 import listService from "core/services/ListService";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, Dispatch } from "react";
 import { ModelFilter } from "react3l/core";
 import { Observable } from "rxjs";
 
@@ -72,31 +72,115 @@ export class TableService {
     setFilter: (filter: TFilter) => void,
     pagination: PaginationProps,
   ) {
-    return useCallback((...[newPagination, , sorter]) => {
-      // check pagination change or not
-      if (
-        pagination.current !== newPagination.current ||
-        pagination.pageSize !== newPagination.pageSize
-      ) {
-        const skip: number = Math.ceil(
-          ((newPagination?.current ?? 0) - 1) *
-            (newPagination?.pageSize ?? DEFAULT_TAKE),
+    return useCallback(
+      (...[newPagination, , sorter]) => {
+        // check pagination change or not
+        if (
+          pagination.current !== newPagination.current ||
+          pagination.pageSize !== newPagination.pageSize
+        ) {
+          const skip: number = Math.ceil(
+            ((newPagination?.current ?? 0) - 1) *
+              (newPagination?.pageSize ?? DEFAULT_TAKE),
+          );
+          const take: number = newPagination.pageSize;
+          setFilter({ ...filter, skip, take });
+        }
+        // check sortOrder and sortDirection
+        if (
+          sorter.field !== filter.orderBy ||
+          sorter.order !== this.getAntOrderType(filter, sorter.field)
+        ) {
+          setFilter({
+            ...filter,
+            orderBy: sorter.field,
+            orderType: this.getOrderType(sorter.order),
+          });
+        }
+      },
+      [filter, pagination, setFilter],
+    );
+  }
+  /**
+   *
+   * return handleDelete, handleBulkDelete
+   * @param:
+   * @return: {handleDelete, handleBulkDelete}
+   *
+   * */
+  useDelete<T extends Model, TFilter extends ModelFilter>(
+    filter: TFilter,
+    setFilter: (filter: TFilter) => void,
+    selectedRowKeys: string[] | number[],
+    setSelectedRowKeys: Dispatch<React.SetStateAction<string[] | number[]>>,
+    source?: T[],
+    setSource?: (source: T[]) => void,
+  ) {
+    // handleDelete, filter one item by its key and update source
+    const handleDelete = useCallback(
+      (key: number | string) => {
+        // delete local list
+        if (source?.length > 0) {
+          if (typeof setSource === "function") {
+            setSource(source.filter((item) => item.key !== key)); // remove one item in source by key and update source
+          }
+          setSelectedRowKeys(
+            (selectedRowKeys as string[]).filter((item) => item !== key), // filter selectedRowKeys
+          );
+          setFilter({ ...filter, skip: 0, take: DEFAULT_TAKE });
+          return;
+        }
+        // delete server list
+        setSelectedRowKeys(
+          (selectedRowKeys as string[]).filter((item) => item !== key), // filter selectedRowKeys
         );
-        const take: number = newPagination.pageSize;
-        setFilter({ ...filter, skip, take });
-      }
-      // check sortOrder and sortDirection
-      if (
-        sorter.field !== filter.orderBy ||
-        sorter.order !== this.getAntOrderType(filter, sorter.field)
-      ) {
-        setFilter({
-          ...filter,
-          orderBy: sorter.field,
-          orderType: this.getOrderType(sorter.order),
+        setFilter({ ...filter, skip: 0, take: DEFAULT_TAKE });
+      },
+      [
+        source,
+        setSource,
+        setSelectedRowKeys,
+        selectedRowKeys,
+        setFilter,
+        filter,
+      ],
+    );
+
+    // delete local by key
+    const handleBulkDelete = useCallback(() => {
+      // delete local list
+      if (source?.length > 0) {
+        Modal.confirm({
+          title: "ban co chac muon xoa thao tac",
+          content: "thao tac khong the khoi phuc",
+          okType: "danger",
+          onOk() {
+            if (typeof setSource === "function") {
+              setSource(
+                source.filter(
+                  (item) => !(selectedRowKeys as string[]).includes(item.key), // rowSelection serve either server table or local table, so we should cast selectedRowKeys as string[]
+                ),
+              ); // remove many items in source by key and update source
+            }
+            setSelectedRowKeys([]); // empty selectedRowKeys for disabling button
+            setFilter({ ...filter, skip: 0, take: DEFAULT_TAKE });
+            return;
+          },
         });
       }
-    }, []);
+      // delete server list
+      setSelectedRowKeys([]); // empty selectedRowKeys for disabling button
+      setFilter({ ...filter, skip: 0, take: DEFAULT_TAKE });
+    }, [
+      source,
+      setFilter,
+      filter,
+      setSource,
+      setSelectedRowKeys,
+      selectedRowKeys,
+    ]);
+
+    return { handleDelete, handleBulkDelete };
   }
   /**
    *
@@ -211,61 +295,14 @@ export class TableService {
       pagination,
     );
 
-    // handleDelete, filter one item by its key and update source
-    const handleDelete = useCallback(
-      (key: number | string) => {
-        if (source?.length > 0) {
-          setSource(source.filter((item) => item.key !== key)); // remove one item in source by key and update source
-          setSelectedRowKeys(
-            (selectedRowKeys as string[]).filter((item) => item !== key), // filter selectedRowKeys
-          );
-          //   dispatchFilter({
-          //     type: ActionFilterEnum.ChangeAllField,
-          //     data: { ...filter, skip: 0, take: DEFAULT_TAKE },
-          //   }); // reset to default skip, take
-          setFilter({ ...filter, skip: 0, take: DEFAULT_TAKE });
-        }
-      },
-      [
-        source,
-        setSource,
-        setSelectedRowKeys,
-        selectedRowKeys,
-        setFilter,
-        filter,
-      ],
-    );
-
-    // delete local by key
-    const handleBulkDelete = useCallback(() => {
-      if (source?.length > 0) {
-        Modal.confirm({
-          title: "ban co chac muon xoa thao tac",
-          content: "thao tac khong the khoi phuc",
-          okType: "danger",
-          onOk() {
-            setSource(
-              source.filter(
-                (item) => !(selectedRowKeys as string[]).includes(item.key), // rowSelection serve either server table or local table, so we should cast selectedRowKeys as string[]
-              ),
-            ); // remove many items in source by key and update source
-            setSelectedRowKeys([]); // empty selectedRowKeys for disabling button
-            // dispatchFilter({
-            //   type: ActionFilterEnum.ChangeAllField,
-            //   data: { ...filter, skip: 0, take: DEFAULT_TAKE },
-            // }); // reset to default skip, take
-            setFilter({ ...filter, skip: 0, take: DEFAULT_TAKE });
-          },
-        });
-      }
-    }, [
-      source,
-      setFilter,
+    const { handleDelete, handleBulkDelete } = this.useDelete<T, TFilter>(
       filter,
-      setSource,
-      setSelectedRowKeys,
+      setFilter,
       selectedRowKeys,
-    ]);
+      setSelectedRowKeys,
+      source,
+      setSource,
+    );
 
     return {
       list,
