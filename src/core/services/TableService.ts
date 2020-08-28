@@ -8,6 +8,8 @@ import { useCallback, useMemo, useState, Dispatch } from "react";
 import { ModelFilter } from "react3l/core";
 import { Observable } from "rxjs";
 
+type KeyType = string | number;
+
 /* services to CRUD, import, export data in table */
 export class TableService {
   /**
@@ -19,16 +21,16 @@ export class TableService {
    * */
   useRowSelection(
     selectionType: RowSelectionType = "checkbox",
-    derivedRowKeys?: string[] | number[], // default rowKeys
+    derivedRowKeys?: KeyType[], // default rowKeys
   ) {
-    const [selectedRowKeys, setSelectedRowKeys] = useState<string[] | number[]>(
+    const [selectedRowKeys, setSelectedRowKeys] = useState<KeyType[]>(
       derivedRowKeys,
     );
 
     return {
       rowSelection: useMemo(
         () => ({
-          onChange(selectedRowKeys: string[] | number[]) {
+          onChange(selectedRowKeys: KeyType[]) {
             // selectedRowKeys data type based on table rowKey props
             setSelectedRowKeys(selectedRowKeys);
           },
@@ -103,23 +105,23 @@ export class TableService {
   }
   /**
    *
-   * return handleDelete, handleBulkDelete
+   * return handleLocalDelete, handleLocalBulkDelete
    * @param:
-   * @return: {handleDelete, handleBulkDelete}
+   * @return: {handleLocalDelete, handleLocalBulkDelete}
    *
    * */
   useDelete<T extends Model, TFilter extends ModelFilter>(
     filter: TFilter,
     setFilter: (filter: TFilter) => void,
-    selectedRowKeys: string[] | number[],
-    setSelectedRowKeys: Dispatch<React.SetStateAction<string[] | number[]>>,
+    selectedRowKeys: KeyType[],
+    setSelectedRowKeys: Dispatch<React.SetStateAction<KeyType[]>>,
     source?: T[],
     setSource?: (source: T[]) => void,
   ) {
     // handleDelete, filter one item by its key and update source
-    const handleDelete = useCallback(
-      (key: number | string) => {
-        // delete local list
+    const handleLocalDelete = useCallback(
+      (key: KeyType) => {
+        // delete local item
         if (source?.length > 0) {
           if (typeof setSource === "function") {
             setSource(source.filter((item) => item.key !== key)); // remove one item in source by key and update source
@@ -130,11 +132,6 @@ export class TableService {
           setFilter({ ...filter, skip: 0, take: DEFAULT_TAKE });
           return;
         }
-        // delete server list
-        setSelectedRowKeys(
-          (selectedRowKeys as string[]).filter((item) => item !== key), // filter selectedRowKeys
-        );
-        setFilter({ ...filter, skip: 0, take: DEFAULT_TAKE });
       },
       [
         source,
@@ -147,7 +144,7 @@ export class TableService {
     );
 
     // delete local by key
-    const handleBulkDelete = useCallback(() => {
+    const handleLocalBulkDelete = useCallback(() => {
       // delete local list
       if (source?.length > 0) {
         Modal.confirm({
@@ -168,9 +165,6 @@ export class TableService {
           },
         });
       }
-      // delete server list
-      setSelectedRowKeys([]); // empty selectedRowKeys for disabling button
-      setFilter({ ...filter, skip: 0, take: DEFAULT_TAKE });
     }, [
       source,
       setFilter,
@@ -180,14 +174,22 @@ export class TableService {
       selectedRowKeys,
     ]);
 
-    return { handleDelete, handleBulkDelete };
+    return { handleLocalDelete, handleLocalBulkDelete };
   }
   /**
    *
-   * expose data and event handler for localtable service
-   * @param: source: T[]
-   * @param: setSource: (source: T[]) => void
-   * @return: { handleFetchInit,handleFetchEnd }
+   * expose data and event handler for master table service
+   * @param: filter: TFilter
+   * @param: setFilter: (filter: TFilter) => void
+   * @param: getList: (filter: TFilter) => Observable<T[]>
+   * @param: getTotal: (filter: TFilter) => Observable<number>
+   * @param: deleteItem?: (t: T) => Observable<T>
+   * @param: bulkDeleteItems?: (t: number[] | string[]) => Observable<void>,
+   * @param: onUpdateListSuccess?: (item?: T) => void,
+   * @param: checkBoxType?: RowSelectionType,
+   * @param: isLoadControl?: boolean,
+   * @param: derivedRowKeys?: KeyType[],
+   * @return: { list, total, loadingList, pagination, handleChange, handleServerDelete, handleServerBulkDelete, rowSelection }
    *
    * */
   useTable<T extends Model, TFilter extends ModelFilter>(
@@ -196,11 +198,11 @@ export class TableService {
     getList: (filter: TFilter) => Observable<T[]>,
     getTotal: (filter: TFilter) => Observable<number>,
     deleteItem?: (t: T) => Observable<T>,
-    bulkDeleteItems?: (t: number[] | string[]) => Observable<void>,
+    bulkDeleteItems?: (t: KeyType[]) => Observable<void>,
     onUpdateListSuccess?: (item?: T) => void,
     checkBoxType?: RowSelectionType,
     isLoadControl?: boolean, // optional control for modal preLoading
-    derivedRowKeys?: string[] | number[],
+    derivedRowKeys?: KeyType[],
   ) {
     // selectedRowKeys
     const {
@@ -214,8 +216,8 @@ export class TableService {
       list,
       total,
       loadingList,
-      handleDelete,
-      handleBulkDelete,
+      handleDelete: handleServerDelete,
+      handleBulkDelete: onServerBulkDelete,
     } = listService.useList(
       filter,
       setFilter,
@@ -223,7 +225,7 @@ export class TableService {
       getTotal,
       deleteItem,
       bulkDeleteItems,
-      selectedRowKeys,
+      selectedRowKeys as number[],
       setSelectedRowKeys,
       onUpdateListSuccess,
       isLoadControl,
@@ -242,14 +244,26 @@ export class TableService {
       pagination,
     );
 
+    // add confirmation
+    const handleServerBulkDelete = useCallback(() => {
+      Modal.confirm({
+        title: "ban co chac muon xoa thao tac",
+        content: "thao tac khong the khoi phuc",
+        okType: "danger",
+        onOk() {
+          onServerBulkDelete(selectedRowKeys as number[]);
+        },
+      });
+    }, [onServerBulkDelete, selectedRowKeys]);
+
     return {
       list,
       total,
       loadingList,
       pagination,
       handleChange,
-      handleDelete,
-      handleBulkDelete,
+      handleServerDelete,
+      handleServerBulkDelete,
       rowSelection,
     };
   }
@@ -259,7 +273,7 @@ export class TableService {
    * expose data and event handler for localtable service
    * @param: source: T[]
    * @param: setSource: (source: T[]) => void
-   * @return: { handleFetchInit,handleFetchEnd }
+   * @return: { list, total, loadingList, pagination, handleChange, handleLocalDelete, handleLocalBulkDelete, rowSelection }
    *
    * */
   useLocalTable<T extends Model, TFilter extends ModelFilter>(
@@ -295,10 +309,13 @@ export class TableService {
       pagination,
     );
 
-    const { handleDelete, handleBulkDelete } = this.useDelete<T, TFilter>(
+    const { handleLocalDelete, handleLocalBulkDelete } = this.useDelete<
+      T,
+      TFilter
+    >(
       filter,
       setFilter,
-      selectedRowKeys,
+      selectedRowKeys as string[],
       setSelectedRowKeys,
       source,
       setSource,
@@ -310,8 +327,8 @@ export class TableService {
       loadingList,
       pagination,
       handleChange,
-      handleDelete,
-      handleBulkDelete,
+      handleLocalDelete,
+      handleLocalBulkDelete,
       rowSelection,
     };
   }

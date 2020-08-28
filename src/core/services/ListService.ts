@@ -24,11 +24,19 @@ import subcriptionCancellation from "./SubscriptionService";
 import { DEFAULT_TAKE } from "core/config/consts";
 import Model from "core/models/Model";
 
+type KeyType = string | number;
+
+export enum ListTypeEnum {
+  OverridedList, // for normal pageable list
+  StackedList, // for infinity-load list
+}
+
 export interface StateOfList<T extends Model> {
   list?: T[];
   total?: number;
   loadingList?: boolean;
   isLoadList?: boolean;
+  hasMoreData?: boolean;
 }
 
 export interface ActionOfList<T extends Model> {
@@ -113,8 +121,15 @@ class ListService {
    *
    * consequence list, total by filtering api
    * @param: filter: TFilter
+   * @param: setFilter: (filter: TFilter) => void
    * @param: getList(filter: TFilter) => Observable<T[]>
    * @param: getTotal(filter: TFilter) => Observable<number>
+   * @param: deleteItem?: (t: T) => Observable<T>
+   * @param: bulkDeleteItems?: (t: number[] | string[]) => Observable<void>,
+   * @param: selectedKeys?: KeyType[],
+   * @param: setSelectedRowKeys?: Dispatch<SetStateAction<KeyType[]>>,
+   * @param: onUpdateListSuccess?: (item?: T) => void,
+   * @param: isLoadControl?: boolean,
    * @return: { list, total, loadingList, handleDelete, handleBulkDelete }
    *
    * */
@@ -124,9 +139,9 @@ class ListService {
     getList: (filter: TFilter) => Observable<T[]>,
     getTotal: (filter: TFilter) => Observable<number>,
     deleteItem?: (t: T) => Observable<T>,
-    bulkDeleteItems?: (t: number[] | string[]) => Observable<void>,
-    selectedKeys?: number[] | string[],
-    setSelectedRowKeys?: Dispatch<SetStateAction<number[] | string[]>>,
+    bulkDeleteItems?: (t: KeyType[]) => Observable<void>,
+    selectedKeys?: KeyType[],
+    setSelectedRowKeys?: Dispatch<SetStateAction<KeyType[]>>,
     onUpdateListSuccess?: (item?: T) => void,
     isLoadControl?: boolean, // optional control for modal preLoading
   ): {
@@ -134,7 +149,7 @@ class ListService {
     total: number;
     loadingList: boolean;
     handleDelete: (item: T) => void;
-    handleBulkDelete: (items: number[] | string[]) => void;
+    handleBulkDelete: (items: KeyType[]) => void;
   } {
     //  auto complete subscription until isCancelled == true (unMounted component)
     const { isCancelled, cancelSubcription } = subcriptionCancellation();
@@ -217,35 +232,37 @@ class ListService {
       ],
     );
 
-    const handleBulkDelete = useCallback(() => {
-      if (typeof bulkDeleteItems === "function") {
-        bulkDeleteItems(selectedKeys)
-          .pipe(
-            tap(handleFetchInit),
-            takeUntil(isCancelled),
-            finalize(handleFetchEnd),
-          )
-          .subscribe(() => {
-            if (typeof onUpdateListSuccess === "function") {
-              onUpdateListSuccess(); // sideEffect when update list successfully
-            }
-            setSelectedRowKeys([]); // empty selectedRowKeys for disabling button
-            setFilter(defaultFilter); // update filter to default skip, take
-            handleLoadList(); // reload updated List
-          });
-      }
-    }, [
-      bulkDeleteItems,
-      defaultFilter,
-      handleFetchEnd,
-      handleFetchInit,
-      handleLoadList,
-      isCancelled,
-      onUpdateListSuccess,
-      selectedKeys,
-      setFilter,
-      setSelectedRowKeys,
-    ]);
+    const handleBulkDelete = useCallback(
+      (keys: number[]) => {
+        if (typeof bulkDeleteItems === "function") {
+          bulkDeleteItems(keys)
+            .pipe(
+              tap(handleFetchInit),
+              takeUntil(isCancelled),
+              finalize(handleFetchEnd),
+            )
+            .subscribe(() => {
+              if (typeof onUpdateListSuccess === "function") {
+                onUpdateListSuccess(); // sideEffect when update list successfully
+              }
+              setSelectedRowKeys([]); // empty selectedRowKeys for disabling button
+              setFilter(defaultFilter); // update filter to default skip, take
+              handleLoadList(); // reload updated List
+            });
+        }
+      },
+      [
+        bulkDeleteItems,
+        defaultFilter,
+        handleFetchEnd,
+        handleFetchInit,
+        handleLoadList,
+        isCancelled,
+        onUpdateListSuccess,
+        setFilter,
+        setSelectedRowKeys,
+      ],
+    );
 
     useEffect(() => {
       if (shouldLoad) {
@@ -265,7 +282,7 @@ class ListService {
    * consequence list, total by filtering local List
    * @param: filter: TFilter
    * @param: source: T[]
-   * @return: { list, total, loadingList, handleAdd, handleDelete, handleBulkDelete }
+   * @return: { list, total, loadingList, handleAdd }
    *
    * */
   useLocalList<T extends Model, TFilter extends ModelFilter>(
