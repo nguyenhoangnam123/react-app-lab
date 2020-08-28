@@ -56,7 +56,7 @@ function listReducer<T>(
     case SET_LIST: {
       const { list, total } = action.payload;
       return {
-        ...action.payload,
+        ...state,
         list,
         total,
       };
